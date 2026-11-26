@@ -13,7 +13,6 @@ import {
   Database,
   Cloud,
   ShieldCheck,
-  Gamepad2,
   GitBranch,
   Layers,
   Users,
@@ -41,7 +40,6 @@ import {
   FaGitAlt,
   FaLinux,
   FaNodeJs,
-  FaUnity,
   FaSwift,
   FaAngular,
 } from "react-icons/fa";
