@@ -31,13 +31,43 @@ jobs:
       SSM_DOCUMENT_NAME: Portfolio-Deploy-Frontend
 
     steps:
+      # OIDC認証情報の確認（調査用）
+      - name: Debug OIDC claims
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const token = await core.getIDToken("sts.amazonaws.com");
+
+            const claims = JSON.parse(
+              Buffer.from(
+                token.split(".")[1],
+                "base64url"
+              ).toString("utf8")
+            );
+
+            console.log(JSON.stringify({
+              iss: claims.iss,
+              aud: claims.aud,
+              sub: claims.sub,
+              repository: claims.repository,
+              ref: claims.ref,
+              environment: claims.environment,
+              event_name: claims.event_name
+            }, null, 2));
+
       # AWSへのOIDC認証
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 5400
+
+      # AWS認証結果の確認
+      - name: Verify AWS identity
+        shell: bash
+        run: |
+          aws sts get-caller-identity
 
       # SSM経由でデプロイを実行
       - name: Execute deployment
