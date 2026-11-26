@@ -1,60 +1,90 @@
-name: Deploy Frontend
+name: Frontend CI/CD
 
+# ========================================
 # 実行トリガー
+# ========================================
 on:
   push:
-    branches:
-      - main
-
-  # GitHubの画面から手動実行可能
+  pull_request:
   workflow_dispatch:
 
-# OIDC認証に必要な権限
+# デフォルトの権限
 permissions:
-  id-token: write
   contents: read
 
-# 同一リポジトリ内の同時デプロイを防止
-concurrency:
-  group: portfolio-frontend-production
-  cancel-in-progress: false
-
 jobs:
+  # ========================================
+  # CI：品質チェック
+  # ========================================
+  ci:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # ソースコードの取得
+      - name: Checkout source code
+        uses: actions/checkout@v5
+
+      # Node.js実行環境の構築
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+
+      # 依存ライブラリのインストール
+      - name: Install dependencies
+        run: npm ci
+
+      # ESLintによる静的解析
+      - name: Run lint
+        run: npm run lint
+
+      # TypeScriptの型チェック
+      - name: Run type check
+        run: npm run typecheck
+
+      # 本番用ビルドチェック
+      - name: Run build
+        run: npm run build
+
+  # ========================================
+  # CD：AWSへの自動デプロイ
+  # ========================================
   deploy:
     name: Deploy Frontend to AWS
+
+    # CIが成功した場合のみ実行
+    needs: ci
+
+    # mainブランチのPush・手動実行のみ許可
+    if: >-
+      success() &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' ||
+       github.event_name == 'workflow_dispatch')
+
     runs-on: ubuntu-latest
     timeout-minutes: 75
 
+    # AWSへのOIDC認証権限
+    permissions:
+      contents: read
+      id-token: write
+
+    # 同時デプロイの防止
+    concurrency:
+      group: portfolio-frontend-production
+      cancel-in-progress: false
+
+    # 環境変数
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
       SSM_DOCUMENT_NAME: Portfolio-Deploy-Frontend
 
     steps:
-      # OIDC認証情報の確認（調査用）
-      - name: Debug OIDC claims
-        uses: actions/github-script@v8
-        with:
-          script: |
-            const token = await core.getIDToken("sts.amazonaws.com");
-
-            const claims = JSON.parse(
-              Buffer.from(
-                token.split(".")[1],
-                "base64url"
-              ).toString("utf8")
-            );
-
-            console.log(JSON.stringify({
-              iss: claims.iss,
-              aud: claims.aud,
-              sub: claims.sub,
-              repository: claims.repository,
-              ref: claims.ref,
-              environment: claims.environment,
-              event_name: claims.event_name
-            }, null, 2));
-
       # AWSへのOIDC認証
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
