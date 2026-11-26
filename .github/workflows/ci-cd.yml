@@ -78,11 +78,16 @@ jobs:
       group: portfolio-frontend-production
       cancel-in-progress: false
 
+    # ========================================
     # 環境変数
+    # ========================================
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
       SSM_DOCUMENT_NAME: Portfolio-Deploy-Frontend
+
+      # CIで検証したコミットSHA
+      COMMIT_SHA: ${{ github.sha }}
 
     steps:
       # AWSへのOIDC認証
@@ -99,16 +104,29 @@ jobs:
         run: |
           aws sts get-caller-identity
 
+      # ========================================
       # SSM経由でデプロイを実行
+      # ========================================
       - name: Execute deployment
         id: deploy
         shell: bash
         run: |
           set -euo pipefail
 
+          # デプロイ対象コミットの出力
+          echo "Target commit: $COMMIT_SHA"
+
+          # コミットSHAの形式チェック
+          if [[ ! "$COMMIT_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid commit SHA."
+            exit 1
+          fi
+
+          # 検証済みコミットをSSMへ渡す
           COMMAND_ID=$(aws ssm send-command \
             --document-name "$SSM_DOCUMENT_NAME" \
             --instance-ids "$EC2_INSTANCE_ID" \
+            --parameters "CommitSha=$COMMIT_SHA" \
             --timeout-seconds 120 \
             --comment "GitHub Actions Frontend Deployment" \
             --query "Command.CommandId" \
@@ -118,7 +136,9 @@ jobs:
 
           echo "command_id=$COMMAND_ID" >> "$GITHUB_OUTPUT"
 
+      # ========================================
       # デプロイ処理の完了を待機
+      # ========================================
       - name: Wait for deployment
         shell: bash
         env:
@@ -161,7 +181,9 @@ jobs:
           echo "Deployment timed out."
           exit 1
 
+      # ========================================
       # デプロイ結果の出力
+      # ========================================
       - name: Show deployment result
         if: always() && steps.deploy.outputs.command_id != ''
         shell: bash
